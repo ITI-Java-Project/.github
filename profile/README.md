@@ -2,263 +2,432 @@
 
 ```mermaid
 graph TB
-    subgraph SystemMain["System Main Components"]
-        subgraph ServerSide["Server Side"]
-            DBManager["DBManager<<Singleton>>"]
-            Connection["Connection"]
-            MoveTransmitter["Move Transmitter"]
-            LoginManager["Login/Signup Manager"]
-            Session["Session"]
-            Player["Player"]
-            
-            DBManager --> Session
-            DBManager --> Player
-            Connection --> Session
-            MoveTransmitter
-            LoginManager --> Player
-        end
-        
-        subgraph ClientSide["Client Side"]
-            ConnectionStrategy["Connection Strategy"]
-            Local["Local"]
-            Online["Online"]
-            
-            GameStrategy["Game Strategy"]
-            VSAI["VS AI"]
-            OnlineGame["Online"]
-            LocalMultiplayer["Local Multiplayer"]
-            
-            CPUStrategy["CPU Strategy"]
-            MinMax["MinMax"]
-            GeminiAPI["Gemini API"]
-            
-            MatchRecorder["Match Recorder"]
-            MatchFileHandler["Match File Handler"]
-            
-            ConnectionStrategy --> Local
-            ConnectionStrategy --> Online
-            
-            GameStrategy --> VSAI
-            GameStrategy --> OnlineGame
-            GameStrategy --> LocalMultiplayer
-            
-            CPUStrategy --> MinMax
-            CPUStrategy --> GeminiAPI
-            
-            MatchRecorder --> MatchFileHandler
-        end
-    end
+
+subgraph Client["Client Side"]
+    direction TB
+
+    UI["Landing / Login / Start / Game / Recordings UI"]
+    ConnectionManager
+    ConnectionStrategy
+    LocalConnection
+    OnlineConnection
+    ClientMessageListener
+    Authentication
+    UserSession
+    SessionDAO
+    GameStrategy
+    LocalGame
+    AiGame
+    OnlineGame
+    CPUStrategy
+    MiniMax
+    Board
+    MatchRecorder
+    MatchFileHandler
+    RecordingUI["RecordingController / RecordingCardController / RecordedMatchController"]
+    DTOsClient["Player DTO / Session DTO / Match DTO"]
+
+    UI --> ConnectionManager
+    UI --> RecordingUI
+    UI --> DTOsClient
+
+    Authentication --> ConnectionManager
+
+    ConnectionManager --> ConnectionStrategy
+    ConnectionStrategy --> LocalConnection
+    ConnectionStrategy --> OnlineConnection
+    ConnectionStrategy --> ClientMessageListener
+
+    ClientMessageListener --> SessionDAO
+    ClientMessageListener --> UserSession
+
+    GameStrategy --> MatchRecorder
+    MatchRecorder --> MatchFileHandler
+
+    GameStrategy --> LocalGame
+    GameStrategy --> AiGame
+    GameStrategy --> OnlineGame
+
+    AiGame --> CPUStrategy
+    CPUStrategy --> MiniMax
+
+    LocalGame --> Board
+    AiGame --> Board
+    OnlineGame --> Board
+end
+
+subgraph Network
+    Socket["TCP Socket (Port 5000)"]
+end
+
+subgraph Server["Server Side"]
+    direction TB
+
+    ServerService
+    ServerListener
+    ClientHandler
+    ServerController
+    SessionManager
+    Session
+    DbManager
+    PlayerDao
+    SessionDao
+    DTOsServer["PlayerDto / SessionDto"]
+    Database["Derby DB"]
+
+    ServerService --> ServerListener
+    ServerListener --> SessionManager
+    SessionManager --> Session
+
+    ServerService --> ClientHandler
+    ClientHandler --> ServerListener
+
+    Session --> PlayerDao
+    Session --> SessionDao
+
+    PlayerDao --> DbManager
+    SessionDao --> DbManager
+    DbManager --> Database
+
+    ServerController --> ServerService
+    ServerListener --> DTOsServer
+end
+
+Client --> Socket
+Socket --> ServerService
 ```
+
 # Database Schema
 
 ```mermaid
 erDiagram
     PLAYER {
         int ID PK
-        string Name
-        string Email
-        string Password
-        string Gender
-        int Score
+        string NAME
+        string EMAIL
+        string PASSWORD
+        string GENDER
+        int SCORE
     }
-    
+
     SESSION {
         int ID PK
-        int Player1_ID FK
-        int Player2_ID FK
-        datetime Start_Time
-        datetime End_Time
-        int Winner_ID FK
+        int PLAYER1_ID FK
+        int PLAYER2_ID FK
+        string PLAYER1_NAME
+        string PLAYER2_NAME
+        int PLAYER1_SCORE
+        int PLAYER2_SCORE
+        datetime START_TIME
+        datetime END_TIME
+        int WINNER_ID FK
     }
-    
+
     PLAYER ||--o{ SESSION : "player1"
     PLAYER ||--o{ SESSION : "player2"
     PLAYER ||--o{ SESSION : "winner"
 ```
+
 # UML Class Diagrams
 
 ## Client Side
 
 ```mermaid
 classDiagram
-    class ConnectionStrategyInterface {
+    class ConnectionStrategy {
         <<interface>>
-        +ConnectToServer()
+        +boolean connectToServer()
+        +void startListener(GameCallback)
+        +void send(String)
+    }
+
+    class LocalConnection {
+        +InetAddress ip
+        +int portNumber
+        +boolean connectToServer()
     }
     
     class OnlineConnection {
-        +ConnectToServer()
+        +InetAddress ip
+        +int portNumber
+        +boolean connectToServer()
     }
-    
-    class LocalConnection {
-        +ConnectToServer()
+
+    class ConnectionManager {
+        -ConnectionStrategy currentConnection
+        +init(ConnectionStrategy)
+        +getConnection() ConnectionStrategy
     }
-    
-    ConnectionStrategyInterface <|.. OnlineConnection
-    ConnectionStrategyInterface <|.. LocalConnection
-    
-    class GameStrategyInterface {
+
+    class ClientMessageListener {
+        -ConnectionStrategy conn
+        -Callback callback
+        +run()
+        -List~Player~ getAllPlayers(String response)
+    }
+
+    class UserSession {
+        <<Singleton>>
+        -Player currentUser
+        +getInstance()
+        +setCurrentUser(Player)
+        +getCurrentUser()
+    }
+
+    class SessionDAO {
+        <<Singleton>>
+        -Session currentSession
+        +setSessionFromJson(String)
+        +getSession() Session
+        +hasActiveSession() boolean
+        +updatePlayer1Score(int)
+        +updatePlayer2Score(int)
+        +clearSession()
+    }
+
+    class GameStrategy {
         <<interface>>
-        +Win() Boolean
-        +Turn() Void
-        +Play(index Point) void
+        +void play(int row,int col,char)
+        +boolean win()
+        +void turn()
     }
-    
-    class OnlineGameClass {
-        -connection ConnectionStrategy
-        +Play(index Point) void
-        +ReceivePlay(index Point) Void
-    }
-    
-    class AIGame {
-        -cpu CPUStrategy
-        +Play(index) void
-    }
-    
+
     class LocalGame {
-        +Play(index)
+        +void play(int row,int col,char)
     }
-    
-    GameStrategyInterface <|.. OnlineGameClass
-    GameStrategyInterface <|.. AIGame
-    GameStrategyInterface <|.. LocalGame
-    
-    class CPUStrategyInterface {
+
+    class AiGame {
+        -CPUStrategy cpu
+        +void play(int row,int col,char)
+        +void playAi(char)
+    }
+
+    class OnlineGame {
+        -ConnectionStrategy connection
+        +void play(int row,int col,char)
+        +void receivePlay(int row,int col)
+    }
+
+    class CPUStrategy {
         <<interface>>
-        +DecideMove(board Board)
+        +int[] decideMove(Board board)
     }
-    
-    class MinMaxClass {
-        +DecideMove(board Board)
+
+    class MiniMax {
+        +int[] decideMove(Board board)
+        +int[] randomMove(Board board)
     }
-    
-    class GeminiClass {
-        +DecideMove(board Board)
-    }
-    
-    CPUStrategyInterface <|.. MinMaxClass
-    CPUStrategyInterface <|.. GeminiClass
-    
-    AIGame --> CPUStrategyInterface
-    OnlineGameClass --> ConnectionStrategyInterface
-    
+
     class Board {
         <<Singleton>>
-        -board char[][]
-        +Reset() void
-        +GetCellByIndex(point Point) char
+        -char[][] board
+        +reset()
+        +getBoard() char[][]
+        +getCell(int row,int col) char
     }
-    
-    class MatchRecorderClass {
-        -moves Move[]
-        -fileHandler MatchFileHandler
-        +addMove(move Move) Void
-        +saveRecord() void
-        +loadRecord() void
+
+    class MatchRecorder {
+        -List~Move~ moves
+        -MatchFileHandler fileHandler
+        +addMove(Move)
+        +saveRecord()
+        +loadRecord()
     }
-    
-    class Move {
-        -point Point
-        -move char
-        +getPoint() Point
-        +getMove() char
-        +setPoint() void
-        +setMove() void
-    }
-    
+
     class MatchFileHandler {
-        +save()
-        +load()
+        +save(Match)
+        +load(String) Match
     }
-    
-    MatchRecorderClass --> Move
-    MatchRecorderClass --> MatchFileHandler
+
+    class RecordingController {
+        -VBox recordsContainer
+        +loadRecord(String playerName,String date,String time,MatchResult result,Match match)
+    }
+
+    class RecordingCardController {
+        -HBox cardRoot
+        -ImageView playerImage
+        -Label vsLabel
+        -Label dateLabel
+        -Label timeLabel
+        +setData(String,String,String,MatchResult)
+    }
+
+    class RecordedMatchController {
+        -Move[] moves
+        -int currentMoveIndex
+        +displayMatchInfo()
+        +clearBoard()
+        +playReplay()
+    }
+
+    class Player {
+        -int id
+        -int score
+        -String name
+        -String email
+        -String gender
+        +getId()
+        +getName()
+    }
+
+    class Session {
+        -int id
+        -int player1Id
+        -int player2Id
+        -int player1Score
+        -int player2Score
+        -String player1Name
+        -String player2Name
+        +getId()
+        +getPlayer1Id()
+        +getPlayer2Id()
+    }
+
+    class Move {
+        -int row
+        -int col
+        -char symbol
+        +getRow()
+        +getCol()
+        +getSymbol()
+    }
+
+    class Match {
+        -String oponentName
+        -Date date
+        -Move[] moves
+        -MatchResult result
+        +getOponentName()
+        +getDate()
+    }
+
+    class MatchResult {
+        <<enumeration>>
+        WIN
+        LOSE
+        DRAW
+    }
+
+    ConnectionStrategy <|.. LocalConnection
+    ConnectionStrategy <|.. OnlineConnection
+    GameStrategy <|.. LocalGame
+    GameStrategy <|.. AiGame
+    GameStrategy <|.. OnlineGame
+    CPUStrategy <|.. MiniMax
+    AiGame --> MiniMax
+    MatchRecorder --> MatchFileHandler
+    RecordingController --> RecordingCardController
+    RecordingController --> RecordedMatchController
 ```
 
 ## Server Side
 
 ```mermaid
 classDiagram
-    class DBManagerClass {
+    class DbManager {
         <<Singleton>>
-        +getQuery(query String) ResultSet
-        +insertQuery(query String) int
-        +update(query String) int
-        +deleteQuery(query String) int
+        +ResultSet getQuery(String)
+        +int insertAndGetId(String, Object...)
+        +boolean updateQueryPrepared(String, Object...)
     }
-    
+
     class PlayerDao {
-        +getAllPlayers() Player[]
-        +addPlayer(player Player) void
-        +getPlayerByEmail(email String) Player
-        +getPlayerById(id int) Player
-        +updatePlayer(player Player) int
+        +PlayerDto register(String name,String email,String password)
+        +PlayerDto login(String username,String password)
+        +List~PlayerDto~ getAllPlayers()
+        +boolean increaseWinnerScore(int playerId)
     }
-    
+
     class SessionDao {
-        +getSessionScore(id int) int
-        +addSession(session Session) int
-        +updateSession(session Session) int
+        +SessionDto createSession(int player1Id,int player2Id,String player1Name,String player2Name)
+        +boolean updateSessionScores(int sessionId,int player1Score,int player2Score)
+        +SessionDto getSessionById(int id)
     }
-    
-    PlayerDao --> DBManagerClass
-    SessionDao --> DBManagerClass
-    
-    class PlayerClass {
-        -id int
-        -name String
-        -email String
-        -password String
-        -gender Gender
-        -score int
-        -IP String
-        +getId() int
-        +getName() String
-        +getEmail() String
-        +getPassword() String
-        +getGender() Gender
-        +getScore() int
-        +getIP() String
+
+    class PlayerDto {
+        -int id
+        -String name
+        -String email
+        -String password
+        -int score
+        -String gender
+        +getId()
+        +getName()
     }
-    
-    class SessionClass {
-        -id int
-        -player1Id int
-        -player2Id int
-        -startTime DateTime
-        -endTime DateTime
-        -winnerId int
-        +getId() int
-        +getPlayer1Id() int
-        +getPlayer2Id() int
-        +getStartTime() DateTime
-        +getEndTime() DateTime
-        +getWinnerId() int
+
+    class SessionDto {
+        -int id
+        -int player1Id
+        -int player2Id
+        -String player1Name
+        -String player2Name
+        -int player1Score
+        -int player2Score
+        +getId()
+        +getPlayer1Id()
+        +getPlayer2Id()
+        +setPlayer1Score(int)
+        +setPlayer2Score(int)
     }
-    
-    PlayerDao --> PlayerClass
-    SessionDao --> SessionClass
-    
-    class MoveTransmitterClass {
-        +sendMove(index Point, move char)
+
+    class ServerListener {
+        -SessionManager sessionManager
+        +onMessage(String msg, ClientHandler client)
+        -handleInvitationRequest(String msg,ClientHandler)
+        -sendSessionDataAsJson(SessionDto,ClientHandler,ClientHandler)
     }
-    
-    class ConnectionClass {
-        -session Session
-        -moveTransmitter MoveTransmitter
-        +createSession(player1ID int, player2Id int) void
-        +receiveMove() void
-        +receiveConnection() void
+
+    class ClientHandler {
+        -Socket socket
+        -PlayerDto player
+        +send(String)
+        +getPlayer()
     }
-    
-    ConnectionClass --> SessionClass
-    ConnectionClass --> MoveTransmitterClass
-    
-    class LoginSignupManager {
-        +login(email String, password String) Player
-        +signup(player Player) boolean
-        +validateCredentials(email String, password String) boolean
+
+    class SessionManager {
+        -Queue~ClientHandler~ waitingClients
+        -List~Session~ activeSessions
+        +addPlayer(ClientHandler)
+        +createSession(ClientHandler,ClientHandler) SessionDto
+        +getAvailablePlayersAsJsonString(ClientHandler)
+        +finishSession(Session)
+        +getWaitingClients()
+        +getPlayersInSessionCount()
     }
-    
-    LoginSignupManager --> PlayerDao
+
+    class Session {
+        -ClientHandler x
+        -ClientHandler o
+        -char turn
+        -int sessionId
+        -int player1Score
+        -int player2Score
+        +playMove(ClientHandler,int,int)
+        +broadcast(String)
+        +endSession()
+    }
+
+    class ServerService {
+        -int port
+        -ServerListener listener
+        +start()
+        +shutdown()
+    }
+
+    class ServerController {
+        +startServer()
+        +stopServer()
+        +updateBarChartData()
+    }
+
+    DbManager <.. PlayerDao
+    DbManager <.. SessionDao
+    ServerListener --> SessionManager
+    SessionManager --> Session
+    Session --> PlayerDao
+    SessionDao --> DbManager
+    ClientHandler --> ServerListener
+    ServerService --> ServerListener
+    ServerController --> ServerService
 ```
